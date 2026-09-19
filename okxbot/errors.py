@@ -76,6 +76,14 @@ class PlanError(OkxBotError):
     """A TradePlan failed schema or sanity validation."""
 
 
+class ReadOnlyViolation(OkxBotError):
+    """A write was attempted while the client is pinned read-only.
+
+    Raised by the transport, not by a caller's own check, so there is no path
+    that forgets to consult the flag.
+    """
+
+
 class RiskRejection(OkxBotError):
     """The risk gate refused to let an otherwise valid plan through."""
 

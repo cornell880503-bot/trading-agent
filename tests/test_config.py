@@ -56,3 +56,27 @@ def test_credentials_are_optional_when_not_required(monkeypatch):
 def test_a_missing_explicit_config_path_is_an_error(monkeypatch):
     with pytest.raises(ConfigError, match="config file not found"):
         load_config("/nonexistent/config.yaml", require_credentials=False)
+
+
+def test_read_only_is_off_unless_asked_for(monkeypatch):
+    monkeypatch.delenv("OKX_READ_ONLY", raising=False)
+    assert load_config(require_credentials=False).read_only is False
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES", "on"])
+def test_read_only_accepts_the_usual_truthy_spellings(monkeypatch, value):
+    monkeypatch.setenv("OKX_READ_ONLY", value)
+    assert load_config(require_credentials=False).read_only is True
+
+
+def test_read_only_is_independent_of_the_live_switch(monkeypatch):
+    """"Point at the real account but refuse every write" must be expressible."""
+    for name, value in (("OKX_API_KEY", "k"), ("OKX_API_SECRET", "s"),
+                        ("OKX_PASSPHRASE", "p"),
+                        ("OKX_LIVE_TRADING", "i-understand-the-risk"),
+                        ("OKX_READ_ONLY", "1")):
+        monkeypatch.setenv(name, value)
+    config = load_config()
+    assert config.simulated is False
+    assert config.read_only is True
+    assert config.environment_label == "LIVE, read-only"

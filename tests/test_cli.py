@@ -193,6 +193,28 @@ def test_the_kill_switch_blocks_submission_through_the_cli(wired, capsys):
     assert "kill switch" in capsys.readouterr().out
 
 
+def test_read_only_blocks_a_live_submit_before_anything_is_sent(wired, monkeypatch, capsys):
+    rest, config = wired
+    config.read_only = True
+    assert run(["submit", str(EXAMPLE), "--live", "--yes"]) == 3
+    assert "OKX_READ_ONLY" in capsys.readouterr().err
+    assert rest.placed == [], "nothing may reach the exchange"
+
+
+def test_read_only_still_allows_the_dry_run(wired, capsys):
+    _, config = wired
+    config.read_only = True
+    assert run(["submit", str(EXAMPLE)]) == 0
+    assert "DRY RUN" in capsys.readouterr().out
+
+
+def test_status_names_read_only_in_the_environment_line(wired, capsys):
+    _, config = wired
+    config.read_only = True
+    assert run(["status"]) == 0
+    assert "read-only" in capsys.readouterr().out
+
+
 def test_status_reports_the_environment_and_the_switch(wired, capsys):
     assert run(["status"]) == 0
     out = capsys.readouterr().out

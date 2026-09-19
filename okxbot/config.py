@@ -59,10 +59,16 @@ class Config:
     timeframes: tuple[str, ...] = ("1H", "4H", "1D")
     candle_limit: int = 300
     plans_dir: str = "plans"
+    read_only: bool = False
 
     @property
     def simulated(self) -> bool:
         return bool(self.credentials and self.credentials.simulated)
+
+    @property
+    def environment_label(self) -> str:
+        env = "demo (paper)" if self.simulated else "LIVE"
+        return f"{env}, read-only" if self.read_only else env
 
 
 def load_credentials(require: bool = True) -> Credentials | None:
@@ -105,9 +111,15 @@ def load_config(path: str | os.PathLike | None = None, require_credentials: bool
     risk = RiskLimits.from_dict(payload.get("risk", {}) or {})
     creds = load_credentials(require=require_credentials)
 
+    # Orthogonal to OKX_LIVE_TRADING on purpose: "point at the live account but
+    # refuse every write" is a legitimate thing to want, and before this flag
+    # existed the only way to reach live also armed trading.
+    read_only = os.environ.get("OKX_READ_ONLY", "").strip().lower() in ("1", "true", "yes", "on")
+
     return Config(
         credentials=creds,
         risk=risk,
+        read_only=read_only,
         base_url=str(payload.get("base_url", LIVE_BASE)),
         db_path=str(payload.get("db_path", "okxbot.sqlite3")),
         timeframes=tuple(payload.get("timeframes", ("1H", "4H", "1D"))),

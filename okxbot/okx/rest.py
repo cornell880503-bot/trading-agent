@@ -15,7 +15,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from ..errors import OkxApiError, OkxHttpError
+from ..errors import OkxApiError, OkxHttpError, ReadOnlyViolation
 from .auth import Credentials, rest_headers
 from .precision import InstrumentSpec
 
@@ -40,17 +40,26 @@ class OkxRest:
         timeout: float = 15.0,
         max_retries: int = 3,
         session: requests.Session | None = None,
+        read_only: bool = False,
     ):
         self.creds = creds
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.max_retries = max_retries
+        # Pinning this at the transport means every write path is covered,
+        # including ones added later that forget to ask.
+        self.read_only = read_only
         self.session = session or requests.Session()
         self._instrument_cache: dict[str, InstrumentSpec] = {}
 
     # ---------------------------------------------------------------- plumbing
 
     def _request(self, method: str, path: str, params=None, body=None, auth=False):
+        if self.read_only and method.upper() != "GET":
+            raise ReadOnlyViolation(
+                f"refusing {method.upper()} {path}: this client is read-only. "
+                "Unset OKX_READ_ONLY to allow writes."
+            )
         request_path = path
         if params:
             clean = {k: v for k, v in params.items() if v is not None}

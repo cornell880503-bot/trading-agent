@@ -78,6 +78,19 @@ Everything runs against OKX's **demo** environment until `OKX_LIVE_TRADING` is
 set to the exact string `i-understand-the-risk`. `true`, `1` and `yes` all keep
 you on paper. That is deliberate.
 
+`OKX_READ_ONLY=1` is a separate switch that makes the transport refuse any
+non-GET request, in either environment. Use it to verify credentials against a
+live account without a demo key. It is not a substitute for the demo
+environment: reads cannot exercise sizing, tick and lot rounding, order
+submission, or the fill-to-protection handoff, which is where the money is.
+
+Your account may not live on the global host. OKX runs separate regional
+entities, and a key issued by one is reported as non-existent (`50119`) by
+another. Public market data answers from any host, so `scan` working while
+every authenticated call fails is the signature of a wrong `base_url` rather
+than a wrong key. Set `base_url` to whatever domain your browser shows on the
+API page.
+
 ## The workflow
 
 ```bash

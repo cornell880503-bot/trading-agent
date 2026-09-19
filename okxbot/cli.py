@@ -43,7 +43,8 @@ def _build(args, require_credentials: bool = True):
     config = load_config(args.config, require_credentials=require_credentials)
     if args.db:
         config.db_path = args.db
-    rest = OkxRest(creds=config.credentials, base_url=config.base_url)
+    rest = OkxRest(creds=config.credentials, base_url=config.base_url,
+                   read_only=config.read_only)
     store = Store(config.db_path)
     return config, rest, store
 
@@ -67,6 +68,19 @@ def _account_state(rest, config, plan) -> AccountState:
         available_quote=float(quote.get("avail", 0.0)),
         available_base=float(base.get("avail", 0.0)),
     )
+
+
+def _refuse_write_if_read_only(config, action: str) -> bool:
+    if not config.read_only:
+        return False
+    print(
+        f"refusing to {action}: OKX_READ_ONLY is set.\n"
+        "  Read-only is for verifying credentials and inspecting an account "
+        "without any risk of a write.\n"
+        "  Unset it to place orders.",
+        file=sys.stderr,
+    )
+    return True
 
 
 def _confirm(prompt: str, expected: str | None = None) -> bool:
@@ -148,6 +162,8 @@ def cmd_submit(args) -> int:
     print(intent.render())
 
     live = args.live
+    if live and _refuse_write_if_read_only(config, "submit an order"):
+        return 3
     real_money = live and not config.simulated
     print()
     if not live:
@@ -182,6 +198,8 @@ def cmd_sync(args) -> int:
     This is the command to put on a short cron once an entry is resting.
     """
     config, rest, store = _build(args)
+    if args.live and _refuse_write_if_read_only(config, "place protective orders"):
+        return 3
     rows = store.open_plans() if not args.plan_id else [store.get_plan_row(args.plan_id)]
     rows = [r for r in rows if r is not None]
     if not rows:
@@ -238,7 +256,7 @@ def cmd_sync(args) -> int:
 
 def cmd_status(args) -> int:
     config, rest, store = _build(args)
-    print(f"environment: {'demo (paper)' if config.simulated else 'LIVE'}")
+    print(f"environment: {config.environment_label}")
     print(f"database:    {config.db_path}")
 
     realized = store.realized_today()
@@ -276,6 +294,8 @@ def cmd_status(args) -> int:
 
 def cmd_cancel(args) -> int:
     config, rest, store = _build(args)
+    if args.live and _refuse_write_if_read_only(config, "cancel orders"):
+        return 3
     row = store.get_plan_row(args.plan_id)
     if row is None:
         print(f"unknown plan {args.plan_id}")
