@@ -35,7 +35,8 @@ class FakeRest:
 
     def ticker(self, inst_id):
         return {"last": str(self.last), "open24h": "60000", "high24h": "62000",
-                "low24h": "59000", "vol24h": "1234"}
+                "low24h": "59000", "vol24h": "1234", "sodUtc0": "61000",
+                "sodUtc8": "60800"}
 
     def candles(self, inst_id, bar="1H", limit=300, **kwargs):
         return candle_rows()
@@ -90,6 +91,20 @@ def test_scan_renders_every_requested_timeframe(wired, capsys):
     out = capsys.readouterr().out
     assert "BTC-USDT" in out and "[1H]" in out and "[4H]" in out
     assert "RSI" in out and "ATR" in out
+
+
+def test_scan_reports_both_reference_prices(wired, capsys):
+    """OKX's chart header uses the 00:00 UTC open; our headline uses rolling 24h.
+
+    Showing only one of them makes the snapshot look wrong beside the
+    exchange's own screen, so both are printed and labelled.
+    """
+    assert run(["scan", "BTC-USDT", "--timeframes", "4H"]) == 0
+    out = capsys.readouterr().out
+    assert "rolling 24h" in out
+    assert "since 00:00 UTC" in out
+    # last 61400 against open24h 60000 and sodUtc0 61000
+    assert "2.333%" in out and "0.656%" in out
 
 
 def test_scan_names_the_bar_each_reading_came_from(wired, capsys):

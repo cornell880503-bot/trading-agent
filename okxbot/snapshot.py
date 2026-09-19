@@ -123,6 +123,10 @@ def build_snapshot(rest, inst_id: str, timeframes=("1H", "4H", "1D"), limit: int
     ticker = rest.ticker(inst_id)
     last = float(ticker.get("last") or 0)
     open24h = float(ticker.get("open24h") or 0)
+    # OKX ships two reference prices and the web UI's headline percentage uses
+    # the second one, not the first. Carrying both stops the snapshot from
+    # looking wrong next to the exchange's own screen.
+    sod_utc0 = float(ticker.get("sodUtc0") or 0)
 
     views = {}
     for timeframe in timeframes:
@@ -134,11 +138,18 @@ def build_snapshot(rest, inst_id: str, timeframes=("1H", "4H", "1D"), limit: int
         "inst_id": inst_id,
         "last_price": _round(last, 8),
         "ticker_24h": {
+            # Rolling: open24h is the price exactly 24 hours ago.
             "open": _round(open24h, 8),
             "high": _round(ticker.get("high24h"), 8),
             "low": _round(ticker.get("low24h"), 8),
             "change_pct": _round(100.0 * (last - open24h) / open24h, 3) if open24h else None,
             "base_volume": _round(ticker.get("vol24h"), 4),
+            # Calendar: sodUtc0 is the 00:00 UTC open, which is what OKX's own
+            # chart header reports. The two percentages legitimately differ.
+            "utc_day_open": _round(sod_utc0, 8),
+            "change_since_utc_open_pct": (
+                _round(100.0 * (last - sod_utc0) / sod_utc0, 3) if sod_utc0 else None
+            ),
         },
         "timeframes": views,
         "note": (
@@ -160,9 +171,13 @@ def render_text(snapshot: dict) -> str:
     candle is still forming while every number here is from the last closed
     one. Stating the bar open time turns a mystery into a lookup.
     """
+    t24 = snapshot["ticker_24h"]
     lines = [
-        f"{snapshot['inst_id']}  last {snapshot['last_price']}  "
-        f"24h {snapshot['ticker_24h']['change_pct']}%   ({snapshot['generated_at']})",
+        f"{snapshot['inst_id']}  last {snapshot['last_price']}   "
+        f"{t24['change_pct']}% rolling 24h   "
+        f"{t24['change_since_utc_open_pct']}% since 00:00 UTC   "
+        f"({snapshot['generated_at']})",
+        f"  24h range {t24['low']} - {t24['high']}",
     ]
     for timeframe, view in snapshot["timeframes"].items():
         if "error" in view:
@@ -184,5 +199,7 @@ def render_text(snapshot: dict) -> str:
         "    - RSI/ADX/ATR period 14; OKX's default RSI panel plots 6/12/24",
         "    - MACD hist here is DIF - DEA. OKX plots 2 x (DIF - DEA), so its",
         "      histogram reads double this value",
+        "    - bar times above are UTC; OKX's chart shows your local timezone",
+        "    - OKX's headline percentage is the 00:00 UTC one, not rolling 24h",
     ]
     return "\n".join(lines)
