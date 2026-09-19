@@ -34,7 +34,10 @@ shortcut for convenience.
 5. **Report outcomes exactly.** If an order was rejected, say so and quote the
    error. Never describe an order as placed until a command has returned
    confirming it.
-6. **A position without exits is an emergency.** If an entry has filled and
+6. **Never book a P&L figure you invented.** `close --pnl` states a realised
+   result to the journal and feeds the kill switch directly. The number comes
+   from the operator reading it off the exchange, never from your estimate.
+7. **A position without exits is an emergency.** If an entry has filled and
    `sync` has not attached protection, say so plainly and get it fixed before
    anything else.
 

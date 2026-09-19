@@ -168,6 +168,13 @@ escape hatches that ignore this; they are still capped.
 
 - **Spot only, long-biased.** No margin, no leverage, no liquidation logic. A
   `sell` plan means reducing base currency you already hold.
+- **`close` can only match exits this program placed.** P&L is reconstructed
+  from fills carrying the plan's client-order-id prefix, so a position closed
+  by hand on the exchange is invisible to it. Rather than book the entry cost
+  as a loss, `close` refuses one-sided fills and asks for the figure:
+  `okxbot close <plan> --pnl <amount>`. This matters beyond bookkeeping — the
+  kill switch is driven by realised P&L, and one that cannot see hand-closed
+  losses under-counts them systematically.
 - **`close` P&L is approximate.** It nets fees denominated in the quote
   currency. OKX charges spot *buy* fees in the base currency, which show up as a
   slightly smaller quantity on the sell side instead.

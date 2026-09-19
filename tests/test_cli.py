@@ -32,6 +32,7 @@ class FakeRest:
     def __init__(self, last=61_400.0, equity=10_000.0):
         self.last, self.equity = last, equity
         self.placed = []
+        self.fill_rows = []
 
     def ticker(self, inst_id):
         return {"last": str(self.last), "open24h": "60000", "high24h": "62000",
@@ -51,6 +52,9 @@ class FakeRest:
     def place_order(self, **kwargs):
         self.placed.append(kwargs)
         return {"ordId": "ord1", "sCode": "0"}
+
+    def fills(self, inst_id=None, limit=100):
+        return self.fill_rows
 
 
 @pytest.fixture
@@ -279,3 +283,87 @@ def test_preview_and_submit_agree_on_the_numbers(wired, capsys):
     submit = capsys.readouterr().out
     for fragment in ("0.00813008", "APPROVED", "runner"):
         assert (fragment in preview) == (fragment in submit)
+
+
+# ------------------------------------------------------------------- close
+
+
+def _seed_plan(config, plan_id="closeme01"):
+    """Put a saved plan in the journal so `close` has something to settle."""
+    from okxbot.plan import TradePlan
+    from okxbot.store import Store
+
+    payload = json.loads(EXAMPLE.read_text())
+    payload["plan_id"] = plan_id
+    store = Store(config.db_path)
+    store.save_plan(TradePlan.from_dict(payload), status="protected")
+    store.close()
+    return plan_id
+
+
+def _fill(side, sz, px, cl_ord_id, fee="0", fee_ccy="USDT"):
+    return {"side": side, "fillSz": sz, "fillPx": px, "clOrdId": cl_ord_id,
+            "fee": fee, "feeCcy": fee_ccy}
+
+
+def test_a_completed_round_trip_books_its_result(wired, capsys):
+    rest, config = wired
+    plan_id = _seed_plan(config)
+    rest.fill_rows = [
+        _fill("buy", "0.001", "60000", f"p{plan_id}e"),
+        _fill("sell", "0.001", "62000", f"p{plan_id}t1", fee="-0.06"),
+    ]
+    assert run(["close", plan_id]) == 0
+    out = capsys.readouterr().out
+    assert "+1.94" in out  # 62 - 60 - 0.06
+
+
+def test_an_entry_with_no_exit_is_refused_rather_than_booked_as_a_loss(wired, capsys):
+    """Booking the entry cost as realised would poison the kill switch."""
+    rest, config = wired
+    plan_id = _seed_plan(config, "onesided01")
+    rest.fill_rows = [_fill("buy", "0.001", "60000", f"p{plan_id}e")]
+
+    assert run(["close", plan_id]) == 1
+    err = capsys.readouterr().err
+    assert "only buy fills" in err
+    assert "--pnl" in err
+
+    from okxbot.store import Store
+    store = Store(config.db_path)
+    assert store.realized_today() == 0.0, "nothing may be booked"
+    store.close()
+
+
+def test_a_hand_closed_position_can_have_its_result_stated(wired, capsys):
+    rest, config = wired
+    plan_id = _seed_plan(config, "byhand01")
+    rest.fill_rows = []
+
+    assert run(["close", plan_id, "--pnl", "-3.25"]) == 0
+    assert "-3.25" in capsys.readouterr().out
+
+    from okxbot.store import Store
+    store = Store(config.db_path)
+    assert store.realized_today() == pytest.approx(-3.25)
+    assert store.get_plan_row(plan_id)["status"] == "closed"
+    store.close()
+
+
+def test_a_stated_loss_feeds_the_kill_switch(wired, capsys):
+    """A hand-closed loss must count against the daily limit like any other."""
+    rest, config = wired
+    plan_id = _seed_plan(config, "byhand02")
+    assert run(["close", plan_id, "--pnl", "-120.0"]) == 0
+    capsys.readouterr()
+
+    assert run(["submit", str(EXAMPLE)]) == 2
+    assert "kill switch" in capsys.readouterr().out
+
+
+def test_an_unmatched_plan_points_at_the_manual_route(wired, capsys):
+    rest, config = wired
+    plan_id = _seed_plan(config, "nofills01")
+    rest.fill_rows = [_fill("buy", "1", "100", "psomeotherplan")]
+    assert run(["close", plan_id]) == 1
+    assert "--pnl" in capsys.readouterr().err

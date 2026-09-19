@@ -380,17 +380,52 @@ def cmd_close(args) -> int:
     plan = TradePlan.from_json(row["payload"])
     prefix = f"p{plan.plan_id}"
 
+    if args.pnl is not None:
+        # An exit taken outside this program -- by hand on the exchange, most
+        # often -- carries no client id of ours, so no amount of matching will
+        # find it. The operator reads the number off OKX and states it.
+        store.record_realized(plan.inst_id, args.pnl, plan.plan_id)
+        store.set_plan_status(plan.plan_id, "closed")
+        store.log_event("closed", f"realised {args.pnl:+.2f} (stated by operator)", plan.plan_id)
+        print(f"{plan.plan_id} closed: {args.pnl:+.2f} {config.risk.quote_ccy} (as stated)")
+        return 0
+
     fills = [f for f in rest.fills(plan.inst_id, limit=100) if (f.get("clOrdId") or "").startswith(prefix)]
     if not fills:
-        print(f"no fills found for {plan.plan_id}; nothing to book")
+        print(
+            f"no fills found for {plan.plan_id}.\n"
+            "  If this position was closed by hand, its exit carries no client id of "
+            "ours and cannot be matched.\n"
+            "  Book the realised figure from OKX with: "
+            f"okxbot close {plan.plan_id} --pnl <amount>",
+            file=sys.stderr,
+        )
         return 1
 
     realized = 0.0
+    sides = set()
     for fill in fills:
         notional = float(fill["fillSz"]) * float(fill["fillPx"])
         realized += notional if fill["side"] == "sell" else -notional
+        sides.add(fill["side"])
         if fill.get("feeCcy") == config.risk.quote_ccy:
             realized += float(fill.get("fee") or 0.0)  # OKX reports fees as negative
+
+    if len(sides) < 2:
+        # One-sided fills mean the round trip is incomplete: either the position
+        # is still open, or it was closed outside this program. Booking the
+        # entry cost as a loss would poison the kill switch, which is the one
+        # control that must not be fed a wrong number.
+        only = sides.pop() if sides else "no"
+        print(
+            f"refusing to book {plan.plan_id}: only {only} fills carry this plan's "
+            f"client id, so {realized:+.2f} is an entry cost, not a result.\n"
+            "  If the position is still open, close it first.\n"
+            "  If it was closed by hand, state the figure: "
+            f"okxbot close {plan.plan_id} --pnl <amount>",
+            file=sys.stderr,
+        )
+        return 1
 
     store.record_realized(plan.inst_id, realized, plan.plan_id)
     store.set_plan_status(plan.plan_id, "closed")
@@ -453,6 +488,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("close", help="book realised P&L for a finished plan")
     p.add_argument("plan_id")
+    p.add_argument(
+        "--pnl",
+        type=float,
+        metavar="AMOUNT",
+        help="book this realised figure instead of deriving it from fills, for a "
+             "position closed outside this program (negative for a loss)",
+    )
     p.set_defaults(func=cmd_close)
 
     return parser
