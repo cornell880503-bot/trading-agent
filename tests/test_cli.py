@@ -224,3 +224,35 @@ def test_status_reports_the_environment_and_the_switch(wired, capsys):
 def test_a_missing_plan_file_exits_two(wired, capsys):
     assert run(["submit", "/nope/missing.json"]) == 2
     assert "file not found" in capsys.readouterr().err
+
+
+def test_a_confirmation_never_reads_input_buffered_before_the_prompt(monkeypatch):
+    """A pasted command block must not be able to answer a real-money prompt."""
+    from okxbot import cli
+
+    drained = []
+    monkeypatch.setattr(cli, "_drain_stdin", lambda: drained.append(True))
+    monkeypatch.setattr("builtins.input", lambda prompt="": "plan123")
+
+    assert cli._confirm("type it: ", expected="plan123") is True
+    assert drained == [True], "the buffer must be flushed before asking"
+
+
+def test_a_wrong_answer_declines(monkeypatch):
+    from okxbot import cli
+
+    monkeypatch.setattr(cli, "_drain_stdin", lambda: None)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "E sync --live")
+    assert cli._confirm("type it: ", expected="plumbingtest02") is False
+
+
+def test_end_of_input_declines_rather_than_proceeding(monkeypatch):
+    from okxbot import cli
+
+    monkeypatch.setattr(cli, "_drain_stdin", lambda: None)
+
+    def raise_eof(prompt=""):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", raise_eof)
+    assert cli._confirm("type it: ", expected="x") is False

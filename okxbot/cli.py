@@ -24,6 +24,7 @@ import argparse
 import json
 import logging
 import sys
+import termios
 from pathlib import Path
 
 from .config import load_config
@@ -83,6 +84,23 @@ def _refuse_write_if_read_only(config, action: str) -> bool:
     return True
 
 
+def _drain_stdin() -> None:
+    """Discard input typed or pasted before the prompt appeared.
+
+    Without this, pasting a block of commands means the line *after*
+    ``submit --live`` is waiting in the terminal buffer when the confirmation
+    prompt opens, and gets consumed as the answer. Usually that aborts the
+    submission harmlessly. It does not have to: a pasted block whose next line
+    happened to be the plan id would confirm a real-money order that nobody
+    agreed to. The answer must be typed after the question is asked.
+    """
+    try:
+        if sys.stdin.isatty():
+            termios.tcflush(sys.stdin.fileno(), termios.TCIFLUSH)
+    except (termios.error, ValueError, OSError):
+        pass  # not a terminal, or no tty to flush; the prompt still works
+
+
 def _confirm(prompt: str, expected: str | None = None) -> bool:
     """Ask before spending money.
 
@@ -90,6 +108,7 @@ def _confirm(prompt: str, expected: str | None = None) -> bool:
     memory can produce a 'y'; it cannot produce a twelve-character hex string
     by accident.
     """
+    _drain_stdin()
     try:
         answer = input(prompt).strip()
     except (EOFError, KeyboardInterrupt):
