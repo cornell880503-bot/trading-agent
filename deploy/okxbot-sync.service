@@ -1,0 +1,26 @@
+[Unit]
+Description=okxbot sync - attach exchange-side TP/SL to filled entries
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=okxbot
+Group=okxbot
+WorkingDirectory=/opt/trading-agent
+
+# systemd reads plain KEY=VALUE lines and ignores '#' comments, so the same
+# .env the shell sources works here unchanged.
+EnvironmentFile=/opt/trading-agent/.env
+
+ExecStart=/opt/trading-agent/.venv/bin/okxbot sync --live
+
+# The bot needs its own directory, the network and nothing else.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/trading-agent
+ProtectKernelTunables=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true

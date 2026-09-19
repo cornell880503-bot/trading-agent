@@ -34,7 +34,8 @@ this repository, because that pattern dies with the process that runs it.
 ## Install
 
 ```bash
-git clone <your-remote> okx-spot-advisor && cd okx-spot-advisor
+git clone https://github.com/cornell880503-bot/trading-agent.git
+cd trading-agent
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest                     # 110 tests, no network required
@@ -70,6 +71,9 @@ Keys are read from the environment only, never from `config.yaml`:
 set -a; source .env; set +a
 ```
 
+For a server deployment -- which IP to whitelist, clock sync, the unprivileged
+user, and a systemd timer for `sync` -- see [docs/vps-deploy.md](docs/vps-deploy.md).
+
 Everything runs against OKX's **demo** environment until `OKX_LIVE_TRADING` is
 set to the exact string `i-understand-the-risk`. `true`, `1` and `yes` all keep
 you on paper. That is deliberate.
@@ -99,12 +103,9 @@ okxbot sync --live
 okxbot status --events 10
 ```
 
-Steps 1 and 5 are the ones worth automating:
-
-```cron
-*/10 * * * * cd /opt/okx-spot-advisor && . .venv/bin/activate && \
-             set -a && . ./.env && set +a && okxbot sync --live >> sync.log 2>&1
-```
+Step 5 is the one that must be automated: until `sync` runs, a filled entry
+has no stop attached. Units for a systemd timer are in `deploy/`; see
+[docs/vps-deploy.md](docs/vps-deploy.md).
 
 `sync` is idempotent — every order carries a client id derived from the plan id,
 so a second run re-reads state rather than re-submitting.

@@ -1,0 +1,13 @@
+[Unit]
+Description=run okxbot sync every 10 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+# Without this, every box that copied these units would fire on the same
+# second. It also keeps the request off the exact bar close.
+RandomizedDelaySec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
