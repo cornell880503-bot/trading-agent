@@ -189,6 +189,55 @@ sudo systemctl restart ssh
 on a macOS workstation it fails, which is fortunate, because succeeding would
 mean editing your laptop's own SSH configuration.)
 
+## 8b. When authenticated calls fail
+
+`scan` works but `status` cannot read balances: public market data is served
+from any OKX host, while account data is bound to the entity your account was
+opened on. That split is the diagnostic, and it points at `base_url`.
+
+Run this on the VPS to find the host that recognises your key. It only reads a
+balance.
+
+```bash
+cat > /tmp/hosttest.py <<'SCRIPT'
+import os, requests
+from okxbot.okx.auth import Credentials, rest_headers
+
+path  = "/api/v5/account/balance"
+hosts = ["https://www.okx.com", "https://my.okx.com",
+         "https://app.okx.com", "https://eea.okx.com"]
+
+for host in hosts:
+    for mode, sim in (("demo", True), ("live", False)):
+        creds = Credentials(os.environ["OKX_API_KEY"], os.environ["OKX_API_SECRET"],
+                            os.environ["OKX_PASSPHRASE"], simulated=sim)
+        try:
+            r = requests.get(host + path, headers=rest_headers(creds, "GET", path), timeout=15)
+            b = r.json()
+            print(f"{host:24} {mode}  HTTP {r.status_code}  code={b.get('code')}  {b.get('msg')}")
+        except Exception as exc:
+            print(f"{host:24} {mode}  ERROR {type(exc).__name__}")
+SCRIPT
+
+sudo -u okxbot bash -c 'cd /opt/trading-agent && set -a && . ./.env && set +a && \
+  .venv/bin/python /tmp/hosttest.py'
+```
+
+Reading the result:
+
+| Code | Meaning | Fix |
+|---|---|---|
+| `0` | this host and environment accept the key | put that host in `base_url` |
+| `50119` | the key is unknown to this host entirely | wrong regional entity |
+| `50101` | right host, key belongs to the other environment | a live key cannot serve the demo endpoint; issue a demo key |
+| `50110` | source IP not whitelisted | compare against `curl -4 -s https://checkip.amazonaws.com` **on the VPS** |
+| `50113` | signature mismatch | trailing space, or a CRLF from a DOS-format save |
+| `50102` | timestamp outside tolerance | clock drift; see step 4 |
+
+A key that fails with `50119` on every host was probably issued from OKX's
+Web3/DEX developer portal rather than the main trading account's API page.
+Those keys carry an `OK-ACCESS-PROJECT` header and cannot reach `/api/v5/account/`.
+
 ## 9. Going live
 
 Only after the demo loop has run end to end — scan, plan, submit, fill, sync,

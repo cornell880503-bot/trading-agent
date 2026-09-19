@@ -1,6 +1,12 @@
 # Risk limits are checked into the repo on purpose: a limit you cannot see in a
 # diff is not a limit. Secrets never live here -- they come from the environment.
 
+# The host your ACCOUNT lives on, which is not always the global one. OKX runs
+# separate regional entities and a key exists on exactly one of them; used
+# against another it fails with 50119 "API key doesn't exist" even though every
+# character is correct. Public market data works from any host, so `scan` will
+# succeed while every authenticated call fails -- that split is the symptom.
+# Use whatever domain your browser shows on the API page, e.g. https://my.okx.com
 base_url: https://www.okx.com
 db_path: okxbot.sqlite3
 plans_dir: plans
