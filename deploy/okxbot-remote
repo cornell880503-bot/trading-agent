@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Installed to ~/bin/okxbot ON YOUR WORKSTATION, when Claude Code runs locally
+# but the trading account's IP whitelist points at the VPS.
+#
+# Every request still leaves from the VPS, so the whitelist needs no second
+# entry and a changing home IP never breaks authentication. The command name
+# matches the VPS wrapper, so one permission policy covers both setups.
+set -euo pipefail
+
+HOST="${OKXBOT_SSH_HOST:-okx-vps}"
+
+# -T: no pty. The confirmation prompt for a live submission needs one, so that
+# case re-runs with -t rather than silently losing the prompt.
+for arg in "$@"; do
+    if [[ "$arg" == "--live" ]]; then
+        exec ssh -t "$HOST" okxbot "$@"
+    fi
+done
+
+exec ssh -T "$HOST" okxbot "$@"

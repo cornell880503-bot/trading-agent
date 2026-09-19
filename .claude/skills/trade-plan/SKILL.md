@@ -11,16 +11,21 @@ the plan id first.
 
 ## Steps
 
-1. **Get a snapshot.** Either the user pastes one, or run:
-   `okxbot scan BTC-USDT --json /tmp/snap.json --raw`
+1. **Get a snapshot.** Run `okxbot scan BTC-USDT` yourself. It is read-only
+   and needs no approval. Only fall back to a pasted snapshot when no
+   deployment is reachable from this session.
 2. **Read, do not recompute.** Indicator values in the snapshot are computed by
    `okxbot/indicators.py` on confirmed candles. Do not derive RSI, ATR or EMAs
    yourself from `recent_bars`; you will get different numbers than the risk
    gate and the charts.
 3. **Form a view across timeframes.** The higher timeframe sets direction; the
    lower one sets the trigger. If they disagree, say so and prefer no trade.
-4. **Write the plan** to a file and run `okxbot validate <file>`.
-5. **Hand it over.** Show the summary and stop. The human runs `submit`.
+4. **Write the plan** to `plans/<name>.json`, then run `okxbot validate` and
+   `okxbot preview`. Preview is the honest one: it applies the risk gate and
+   prints the exact orders, including the quantities after lot rounding.
+5. **Report and stop.** Give the operator the view, the gate's decision and
+   the orders that would go out. Running `submit --live` is their call, and
+   the confirmation it asks for is theirs to type -- never yours.
 
 ## Placing the stop
 
@@ -64,3 +69,13 @@ malformed output costs a round trip — get the direction rules right:
 
 - buy  → `stop.price` < `entry.price` < every `targets[].price`
 - sell → `stop.price` > `entry.price` > every `targets[].price`
+
+## After a submission
+
+An entry that fills is unprotected until `sync` attaches its exits. When a
+submission fills, say so and run `okxbot sync --live` -- it needs approval,
+so ask for it directly rather than waiting to be told.
+
+Report what happened, not what was supposed to happen. Quote rejections
+verbatim; a plan the gate refused is information about the plan, not an
+obstacle to route around.

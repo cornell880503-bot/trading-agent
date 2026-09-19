@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(okxbot scan:*)",
+      "Bash(okxbot status:*)",
+      "Bash(okxbot validate:*)",
+      "Bash(okxbot preview:*)",
+      "Bash(okxbot schema:*)",
+      "Read(plans/**)",
+      "Write(plans/**)",
+      "Read(config.yaml)"
+    ],
+    "ask": [
+      "Bash(okxbot submit:*)",
+      "Bash(okxbot sync:*)",
+      "Bash(okxbot cancel:*)",
+      "Bash(okxbot close:*)",
+      "Write(config.yaml)",
+      "Write(.env)"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(**/*.sqlite3)"
+    ]
+  }
+}

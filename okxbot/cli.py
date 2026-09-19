@@ -423,6 +423,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("plan")
     p.set_defaults(func=cmd_validate)
 
+    # Same code path as `submit` with --live withheld. It exists as its own verb
+    # so a permission policy can separate "show me what would happen" from
+    # "spend money" -- a distinction a flag buried mid-command cannot express.
+    p = sub.add_parser("preview", help="risk-check a plan and print the orders, sending nothing")
+    p.add_argument("plan")
+    p.set_defaults(func=cmd_submit, live=False, yes=False)
+
     p = sub.add_parser("submit", help="risk-check a plan and place its entry order")
     p.add_argument("plan")
     p.add_argument("--live", action="store_true", help="actually transmit (default is a dry run)")

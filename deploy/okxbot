@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Installed to /usr/local/bin/okxbot ON THE VPS.
+#
+# Gives every caller one stable command name, which is what makes a permission
+# policy expressible: "Bash(okxbot scan:*)" is a rule, whereas a pattern over
+# `sudo -u okxbot bash -c 'cd ... && set -a && . ./.env ...'` is not.
+#
+# Credentials are read inside the okxbot account, so .env stays 0600 and the
+# secrets never pass through the caller's environment.
+set -euo pipefail
+
+APP_DIR="${OKXBOT_HOME:-/opt/trading-agent}"
+
+if [[ ! -d "$APP_DIR" ]]; then
+    echo "okxbot: $APP_DIR not found (set OKXBOT_HOME to override)" >&2
+    exit 2
+fi
+
+exec sudo -u okxbot bash -c '
+    cd "$1" || exit 2
+    set -a
+    # shellcheck disable=SC1091
+    . ./.env
+    set +a
+    shift
+    exec .venv/bin/okxbot "$@"
+' okxbot-wrapper "$APP_DIR" "$@"

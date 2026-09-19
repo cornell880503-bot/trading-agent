@@ -256,3 +256,26 @@ def test_end_of_input_declines_rather_than_proceeding(monkeypatch):
 
     monkeypatch.setattr("builtins.input", raise_eof)
     assert cli._confirm("type it: ", expected="x") is False
+
+
+def test_preview_is_a_dry_run_that_cannot_become_live(wired, capsys):
+    """The permission boundary depends on this: `preview` has no --live."""
+    rest, _ = wired
+    assert run(["preview", str(EXAMPLE)]) == 0
+    out = capsys.readouterr().out
+    assert "DRY RUN" in out and "execution intent" in out
+    assert rest.placed == []
+
+
+def test_preview_rejects_a_live_flag_outright(wired):
+    with pytest.raises(SystemExit):
+        run(["preview", str(EXAMPLE), "--live"])
+
+
+def test_preview_and_submit_agree_on_the_numbers(wired, capsys):
+    assert run(["preview", str(EXAMPLE)]) == 0
+    preview = capsys.readouterr().out
+    assert run(["submit", str(EXAMPLE)]) == 0
+    submit = capsys.readouterr().out
+    for fragment in ("0.00813008", "APPROVED", "runner"):
+        assert (fragment in preview) == (fragment in submit)

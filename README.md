@@ -123,6 +123,15 @@ has no stop attached. Units for a systemd timer are in `deploy/`; see
 `sync` is idempotent — every order carries a client id derived from the plan id,
 so a second run re-reads state rather than re-submitting.
 
+## Driving it from a conversation
+
+Copying snapshots into a chat and commands back into a terminal makes the
+operator a clipboard. An assistant can run the read-only commands itself and
+stop at the one that spends money, where the client's permission prompt
+becomes the approval gate. `okxbot preview` exists to make that boundary
+expressible: it is `submit` with no way to become live.
+See [docs/claude-code-setup.md](docs/claude-code-setup.md).
+
 ## What stops a bad trade
 
 `config.yaml` holds the limits; `okxbot/risk.py` enforces them. The analysis
