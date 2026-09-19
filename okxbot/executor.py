@@ -279,6 +279,29 @@ class Executor:
         self.store.log_event("entry_submitted", f"ordId={result.get('ordId')}", plan.plan_id)
         return result
 
+    @staticmethod
+    def protectable_size(order: dict, base_ccy: str) -> float:
+        """How much of a filled entry can actually be sold.
+
+        A SPOT buy is charged its fee in the BASE currency, so the quantity
+        that lands in the account is less than ``accFillSz``. Protecting the
+        ordered quantity therefore asks the exchange to sell coins that were
+        never received: the exit orders bounce on insufficient balance and the
+        position sits unprotected -- filled, and naked.
+
+        OKX reports the fee as a negative number in ``fee``, denominated in
+        ``feeCcy``, so the arithmetic is an addition.
+        """
+        filled = float(order.get("accFillSz") or 0)
+        if filled <= 0:
+            return 0.0
+        fee = float(order.get("fee") or 0)
+        # Only a base-denominated fee reduces what we hold. A sell's fee comes
+        # out of the quote currency and leaves the base quantity untouched.
+        if order.get("feeCcy") == base_ccy and fee < 0:
+            filled += fee
+        return max(filled, 0.0)
+
     def place_protection(self, intent: ExecutionIntent, filled_size: str, dry_run: bool = True) -> list[dict]:
         """Attach exchange-side exits to a filled entry.
 

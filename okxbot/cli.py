@@ -237,13 +237,29 @@ def cmd_sync(args) -> int:
             continue
 
         spec = rest.instrument(plan.inst_id)
-        # Rebuild the intent from the *filled* quantity, not the planned one.
+        base_ccy = plan.inst_id.split("-")[0]
+
+        # Protect what the account actually holds, not what was ordered. Fees
+        # on a spot buy come out of the base currency, and the balance is the
+        # final word on what can be sold.
+        protectable = executor.protectable_size(order, base_ccy)
+        try:
+            available = float(rest.balances(base_ccy).get(base_ccy, {}).get("avail", 0.0))
+            if available < protectable:
+                print(f"  capping protection at the {available:.8f} {base_ccy} actually available")
+                protectable = available
+        except OkxBotError as exc:
+            print(f"  could not read the {base_ccy} balance ({exc}); using the fee-adjusted fill")
+
+        if protectable < float(filled):
+            print(f"  protecting {protectable:.8f} of {filled} filled (fees are paid in {base_ccy})")
+
         from .risk import RiskDecision  # local import: only needed on this path
 
         intent = executor.build_intent(
-            plan, RiskDecision(approved=True, base_size=float(filled)), spec
+            plan, RiskDecision(approved=True, base_size=protectable), spec
         )
-        placed = executor.place_protection(intent, filled, dry_run=not args.live)
+        placed = executor.place_protection(intent, spec.size(protectable), dry_run=not args.live)
         if args.live and placed:
             notify(
                 f"protection live: {plan.inst_id}",

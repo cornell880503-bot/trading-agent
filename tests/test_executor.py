@@ -12,6 +12,8 @@ from okxbot.store import Store
 NOW = datetime.now(timezone.utc)
 BTC = InstrumentSpec("BTC-USDT", "0.1", "0.00000001", "0.001", "BTC", "USDT")
 CHUNKY = InstrumentSpec("CHUNK-USDT", "0.1", "1", "1", "CHUNK", "USDT")
+# The real BTC-USDT grid, for cases that turn on the true minimum.
+LIVE_BTC = InstrumentSpec("BTC-USDT", "0.1", "0.00000001", "0.00001", "BTC", "USDT")
 
 
 def plan(**overrides) -> TradePlan:
@@ -243,3 +245,49 @@ def test_exits_are_the_opposite_side_of_the_entry(store):
     assert intent.exit_side == "sell"
     executor.place_protection(intent, filled_size="1.0", dry_run=False)
     assert all(o["side"] == "sell" for o in rest.ocos)
+
+
+# ------------------------------------------------- what can actually be sold
+
+
+def test_a_spot_buy_fee_reduces_what_there_is_to_protect():
+    """The fee on a spot buy is taken in BTC, so less BTC arrives than was ordered."""
+    order = {"accFillSz": "0.00013333", "fee": "-0.00000013", "feeCcy": "BTC"}
+    assert Executor.protectable_size(order, "BTC") == pytest.approx(0.0001332)
+
+
+def test_a_quote_denominated_fee_leaves_the_base_quantity_alone():
+    # Selling costs USDT; the BTC that changed hands is unaffected.
+    order = {"accFillSz": "0.5", "fee": "-40.5", "feeCcy": "USDT"}
+    assert Executor.protectable_size(order, "BTC") == pytest.approx(0.5)
+
+
+def test_a_rebate_never_inflates_the_protected_quantity():
+    order = {"accFillSz": "1.0", "fee": "0.001", "feeCcy": "BTC"}
+    assert Executor.protectable_size(order, "BTC") == pytest.approx(1.0)
+
+
+def test_an_unfilled_order_has_nothing_to_protect():
+    assert Executor.protectable_size({"accFillSz": "0", "fee": "0"}, "BTC") == 0.0
+    assert Executor.protectable_size({}, "BTC") == 0.0
+
+
+def test_a_fee_larger_than_the_fill_cannot_go_negative():
+    order = {"accFillSz": "0.001", "fee": "-0.002", "feeCcy": "BTC"}
+    assert Executor.protectable_size(order, "BTC") == 0.0
+
+
+def test_protection_never_exceeds_the_quantity_received(store):
+    """The whole point: legs must sum to at most what is actually held."""
+    rest = FakeRest()
+    executor = Executor(rest, store)
+    order = {"accFillSz": "0.00013333", "fee": "-0.00000013", "feeCcy": "BTC"}
+    held = Executor.protectable_size(order, "BTC")
+
+    p = plan(size={"mode": "quote", "value": 10.0})
+    intent = executor.build_intent(p, approved(held), LIVE_BTC)
+    executor.place_protection(intent, LIVE_BTC.size(held), dry_run=False)
+
+    sold = sum(float(o["sz"]) for o in rest.ocos) + sum(float(o["sz"]) for o in rest.stops)
+    assert sold <= held + 1e-12
+    assert sold == pytest.approx(held, abs=1e-8)

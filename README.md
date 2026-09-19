@@ -162,6 +162,11 @@ escape hatches that ignore this; they are still capped.
 - **`close` P&L is approximate.** It nets fees denominated in the quote
   currency. OKX charges spot *buy* fees in the base currency, which show up as a
   slightly smaller quantity on the sell side instead.
+- **Protection is sized from what the account holds, not what was ordered.**
+  A spot buy pays its fee in the base currency, so slightly less arrives than
+  `accFillSz` reports; the exits are sized from the fee-adjusted fill and then
+  capped by the live base balance. Without both, the exit orders bounce on
+  insufficient balance and leave a filled position unprotected.
 - **`sync` protects a partial fill only with `--partial`,** and having done so
   will not extend protection as more of the entry fills — the leg client ids are
   already used. Cancel and re-plan instead.
