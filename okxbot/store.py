@@ -192,6 +192,17 @@ class Store:
                 (_now(), kind, plan_id, detail),
             )
 
+    def last_event_at(self, kind: str, plan_id: str) -> datetime | None:
+        """When this plan last produced an event of this kind, if ever.
+
+        Used to prove a preview happened before an approval was acted on.
+        """
+        row = self._conn.execute(
+            "SELECT ts FROM events WHERE kind=? AND plan_id=? ORDER BY id DESC LIMIT 1",
+            (kind, plan_id),
+        ).fetchone()
+        return datetime.fromisoformat(row["ts"]) if row else None
+
     def recent_events(self, limit: int = 30) -> list[sqlite3.Row]:
         return self._conn.execute(
             "SELECT * FROM events ORDER BY id DESC LIMIT ?", (limit,)

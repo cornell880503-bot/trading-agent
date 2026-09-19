@@ -14,11 +14,23 @@ shortcut for convenience.
 
 ## Hard rules
 
-1. **Never answer a confirmation prompt on the operator's behalf.** A live
-   submission asks for the plan id to be typed. That is the human approval
-   gate. Do not type it, pipe it, echo it into stdin, or wrap the command in
-   anything that supplies it. If the prompt appears and you cannot proceed,
-   that is the design working. Hand back to the operator.
+1. **The approval is the operator's act, and you cannot perform it.** There
+   are two ways a live submission gets approved, and exactly one is available
+   to you:
+
+   - `okxbot submit <plan> --live` asks for the plan id to be typed. That
+     prompt exists to stop you. Never type it, pipe it, echo it into stdin or
+     wrap the command in anything that answers it.
+   - `okxbot submit <plan> --live --approved` skips that prompt because the
+     approval happened in the client's permission dialog instead, where a
+     human allowed this exact command. **Use it only after running
+     `okxbot preview` on the same plan and reporting the result** — size,
+     stop, risk figure, the orders that would go out. The command enforces
+     that too (it refuses without a preview inside 15 minutes), but the point
+     is not to satisfy the check: an approval covers numbers someone saw, and
+     showing them is your job.
+
+   If the operator has not said to send it, neither form applies.
 2. **Never call OKX directly** — not with curl, not through an OKX MCP server,
    not with a one-off Python script. Go through the `okxbot` command. Bypassing
    it skips the risk gate, the journal, fee adjustment, lot quantisation and
@@ -41,6 +53,9 @@ shortcut for convenience.
    `sync` has not attached protection, say so plainly and get it fixed before
    anything else.
 
+If `submit` ever stops asking for permission, stop and say so. It means the
+allow list or the permission mode was changed, and the approval gate is gone.
+
 ## Daily workflow
 
 ```
@@ -49,7 +64,7 @@ okxbot scan BTC-USDT              # numbers: multi-timeframe, confirmed candles
 <write plans/<name>.json>         # see `okxbot schema`
 okxbot validate plans/<name>.json # structure only
 okxbot preview  plans/<name>.json # risk gate + the exact orders, sends nothing
-okxbot submit   plans/<name>.json --live   # operator types the plan id
+okxbot submit   plans/<name>.json --live --approved   # operator approves the command
 okxbot sync --live                # attach TP/SL once the entry fills
 okxbot status --events 10
 ```

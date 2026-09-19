@@ -71,8 +71,20 @@ With the assistant running commands, the confirmation prompt inside
 `submit --live` is no longer the human gate — the assistant would be the one
 typing. `CLAUDE.md` forbids that, but a rule is not a control.
 
-The control is the client's own permission prompt. `.claude/settings.json`
-splits the commands:
+The control is the client's own permission prompt, and `--approved` is what
+lets it *be* the control: it tells `submit` that the approval already happened
+outside the process, so the interactive prompt does not also have to be
+answered. Without it the two gates deadlock — the assistant runs the command,
+the prompt opens, and the assistant is forbidden from answering it.
+
+`--approved` is not a way around approval. It refuses unless a `preview` of the
+same plan ran within the last 15 minutes, because a permission dialog shows a
+command line, not a position size. Something has to guarantee the numbers were
+on screen before the click, and that check is it. A plan file with no declared
+`plan_id` is refused for the same reason: every load would invent a new id, so
+no preview could be tied to the submission.
+
+`.claude/settings.json` splits the commands:
 
 | Allowed silently | Asks every time |
 |---|---|
@@ -96,7 +108,7 @@ a mode that skips permission prompts. That is the entire gate.
 >
 > **Operator:** send it.
 >
-> **Assistant:** runs `okxbot submit plans/btc-4h.json --live` → the client
+> **Assistant:** runs `okxbot submit plans/btc-4h.json --live --approved` → the client
 > asks the operator to approve the command → the operator approves → the
 > assistant reports the fill, runs `okxbot sync --live` (approved again) and
 > confirms the exits are resting at the exchange.

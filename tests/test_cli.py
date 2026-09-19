@@ -367,3 +367,105 @@ def test_an_unmatched_plan_points_at_the_manual_route(wired, capsys):
     rest.fill_rows = [_fill("buy", "1", "100", "psomeotherplan")]
     assert run(["close", plan_id]) == 1
     assert "--pnl" in capsys.readouterr().err
+
+
+# ------------------------------------------------- approval given elsewhere
+
+
+def _plan_file(tmp_path, plan_id="approved001", **overrides):
+    payload = json.loads(EXAMPLE.read_text())
+    payload["plan_id"] = plan_id
+    payload.update(overrides)
+    path = tmp_path / f"{plan_id}.json"
+    path.write_text(json.dumps(payload))
+    return str(path)
+
+
+def test_approved_is_refused_when_no_preview_was_ever_run(wired, tmp_path, capsys):
+    """An approval covers numbers someone saw. None were shown here."""
+    rest, _ = wired
+    assert run(["submit", _plan_file(tmp_path), "--live", "--approved"]) == 3
+    assert "never previewed" in capsys.readouterr().err
+    assert rest.placed == []
+
+
+def test_approved_is_honoured_after_a_preview(wired, tmp_path, capsys):
+    rest, _ = wired
+    path = _plan_file(tmp_path, "approved002")
+    assert run(["preview", path]) == 0
+    capsys.readouterr()
+
+    assert run(["submit", path, "--live", "--approved"]) == 0
+    assert len(rest.placed) == 1, "the order goes out without an interactive prompt"
+
+
+def test_a_stale_preview_does_not_carry_an_approval(wired, tmp_path, monkeypatch, capsys):
+    rest, _ = wired
+    path = _plan_file(tmp_path, "approved003")
+    assert run(["preview", path]) == 0
+    capsys.readouterr()
+
+    # Wind the clock past the window rather than sleeping through it.
+    from okxbot import cli
+
+    monkeypatch.setattr(cli, "PREVIEW_WINDOW_SECONDS", -1)
+    assert run(["submit", path, "--live", "--approved"]) == 3
+    assert "last previewed" in capsys.readouterr().err
+    assert rest.placed == []
+
+
+def test_a_plan_without_a_declared_id_cannot_be_approved(wired, tmp_path, capsys):
+    """Without a fixed id the preview and the submission are different plans."""
+    rest, _ = wired
+    payload = json.loads(EXAMPLE.read_text())
+    payload.pop("plan_id", None)
+    path = tmp_path / "anonymous.json"
+    path.write_text(json.dumps(payload))
+
+    assert run(["preview", str(path)]) == 0
+    capsys.readouterr()
+    assert run(["submit", str(path), "--live", "--approved"]) == 3
+    assert "declares no plan_id" in capsys.readouterr().err
+    assert rest.placed == []
+
+
+def test_an_approval_that_was_used_is_recorded(wired, tmp_path, capsys):
+    _, config = wired
+    path = _plan_file(tmp_path, "approved004")
+    assert run(["preview", path]) == 0
+    assert run(["submit", path, "--live", "--approved"]) == 0
+    capsys.readouterr()
+
+    from okxbot.store import Store
+    store = Store(config.db_path)
+    kinds = [e["kind"] for e in store.recent_events(10)]
+    assert "approved_externally" in kinds
+    store.close()
+
+
+def test_a_refused_approval_is_recorded_too(wired, tmp_path, capsys):
+    _, config = wired
+    assert run(["submit", _plan_file(tmp_path, "approved005"), "--live", "--approved"]) == 3
+    capsys.readouterr()
+
+    from okxbot.store import Store
+    store = Store(config.db_path)
+    kinds = [e["kind"] for e in store.recent_events(10)]
+    assert "approval_refused" in kinds
+    store.close()
+
+
+def test_approved_still_obeys_the_risk_gate(wired, tmp_path, capsys):
+    """Approval is not an override: a rejected plan stays rejected."""
+    rest, _ = wired
+    path = _plan_file(tmp_path, "approved006", inst_id="SOL-USDT")
+    assert run(["preview", path]) == 2
+    capsys.readouterr()
+    assert run(["submit", path, "--live", "--approved"]) == 2
+    assert "not whitelisted" in capsys.readouterr().out
+    assert rest.placed == []
+
+
+def test_preview_cannot_be_given_an_approval_flag(wired, tmp_path):
+    with pytest.raises(SystemExit):
+        run(["preview", _plan_file(tmp_path, "approved007"), "--approved"])

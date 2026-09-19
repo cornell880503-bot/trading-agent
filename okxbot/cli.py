@@ -6,9 +6,8 @@ The workflow this implements is deliberately two-stage:
     <analysis happens elsewhere, producing plan.json>
     okxbot submit plan.json --live           # numbers in, after a human says yes
 
-Nothing here calls a language model. The analysis step is a human pasting a
-snapshot into a conversation and pasting a plan back out. That keeps the model
-out of the execution path, which is the whole architecture in one sentence.
+Nothing here calls a language model. Analysis happens outside, and its only
+output is a TradePlan, which keeps the model out of the execution path.
 
 Safety is layered:
 
@@ -16,6 +15,9 @@ Safety is layered:
   dry run that prints exactly what would have been sent.
 * ``OKX_LIVE_TRADING=i-understand-the-risk`` is required to leave the demo
   endpoint. Without it, ``--live`` trades against OKX's paper environment.
+* A live submission needs a human: either the plan id typed at the prompt, or
+  ``--approved``, which says the approval happened in a client's permission
+  dialog and requires a recent ``preview`` to prove the numbers were shown.
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ import json
 import logging
 import sys
 import termios
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .config import load_config
@@ -38,6 +41,11 @@ from .snapshot import build_snapshot, render_text, to_json
 from .store import Store
 
 log = logging.getLogger("okxbot")
+
+# How recently a preview must have run for --approved to be honoured. Long
+# enough to read the numbers and answer; short enough that they still describe
+# the market the approval was given for.
+PREVIEW_WINDOW_SECONDS = 900
 
 
 def _build(args, require_credentials: bool = True):
@@ -192,7 +200,44 @@ def cmd_submit(args) -> int:
 
     env_label = "REAL MONEY" if real_money else "demo (paper) trading"
     print(f"target environment: {env_label}")
-    if real_money:
+
+    if args.approved:
+        # The approval already happened, outside this process: a human allowed
+        # this exact command line in the client's permission dialog, which is
+        # an action an assistant cannot perform for them.
+        #
+        # What that dialog cannot show is the numbers -- it displays a command,
+        # not a size, a stop or a risk figure. So an approval only counts when
+        # a preview of this same plan ran recently enough to have been read and
+        # reported first. Approving a command whose consequences were never
+        # displayed is not approval, and this is the part that enforces it.
+        # A plan file that declares no id gets a fresh one on every load, so no
+        # preview could ever be matched to this submission. Refuse plainly
+        # rather than reporting the confusing "never previewed" that follows.
+        if not json.loads(Path(args.plan).read_text(encoding="utf-8")).get("plan_id"):
+            print(
+                f"refusing --approved: {args.plan} declares no plan_id, so each load "
+                "invents a different one and no preview can be tied to this "
+                "submission.\n  Add a \"plan_id\" to the file and preview it again.",
+                file=sys.stderr,
+            )
+            return 3
+
+        seen = store.last_event_at("dry_run_entry", plan.plan_id)
+        age = (datetime.now(timezone.utc) - seen).total_seconds() if seen else None
+        if age is None or age > PREVIEW_WINDOW_SECONDS:
+            was = "never previewed" if age is None else f"last previewed {age / 60:.0f} min ago"
+            print(
+                f"refusing --approved: plan {plan.plan_id} was {was}.\n"
+                f"  An approval covers numbers someone saw. Run "
+                f"`okxbot preview {args.plan}`, show the result, then approve.",
+                file=sys.stderr,
+            )
+            store.log_event("approval_refused", was, plan.plan_id)
+            return 3
+        ok = True
+        store.log_event("approved_externally", f"preview seen {age:.0f}s earlier", plan.plan_id)
+    elif real_money:
         ok = _confirm(f"Type the plan id ({plan.plan_id}) to submit for real: ", expected=plan.plan_id)
     else:
         ok = args.yes or _confirm("Submit to the demo environment? [y/N] ")
@@ -463,12 +508,20 @@ def build_parser() -> argparse.ArgumentParser:
     # "spend money" -- a distinction a flag buried mid-command cannot express.
     p = sub.add_parser("preview", help="risk-check a plan and print the orders, sending nothing")
     p.add_argument("plan")
-    p.set_defaults(func=cmd_submit, live=False, yes=False)
+    p.set_defaults(func=cmd_submit, live=False, yes=False, approved=False)
 
     p = sub.add_parser("submit", help="risk-check a plan and place its entry order")
     p.add_argument("plan")
     p.add_argument("--live", action="store_true", help="actually transmit (default is a dry run)")
     p.add_argument("--yes", action="store_true", help="skip the prompt (demo environment only)")
+    p.add_argument(
+        "--approved",
+        action="store_true",
+        help="the operator approved this exact command elsewhere -- in the client's "
+             "permission dialog -- so skip the interactive prompt. Requires a preview "
+             "of this plan within the last 15 minutes, so the approval covered numbers "
+             "that were actually shown.",
+    )
     p.set_defaults(func=cmd_submit)
 
     p = sub.add_parser("sync", help="attach TP/SL to entries that have filled")
