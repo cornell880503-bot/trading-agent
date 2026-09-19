@@ -2,6 +2,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from decimal import Decimal
+
 from okxbot.errors import OkxApiError
 from okxbot.executor import DuplicateSubmission, Executor
 from okxbot.okx.precision import InstrumentSpec
@@ -253,28 +255,28 @@ def test_exits_are_the_opposite_side_of_the_entry(store):
 def test_a_spot_buy_fee_reduces_what_there_is_to_protect():
     """The fee on a spot buy is taken in BTC, so less BTC arrives than was ordered."""
     order = {"accFillSz": "0.00013333", "fee": "-0.00000013", "feeCcy": "BTC"}
-    assert Executor.protectable_size(order, "BTC") == pytest.approx(0.0001332)
+    assert Executor.protectable_size(order, "BTC") == Decimal("0.00013320")
 
 
 def test_a_quote_denominated_fee_leaves_the_base_quantity_alone():
     # Selling costs USDT; the BTC that changed hands is unaffected.
     order = {"accFillSz": "0.5", "fee": "-40.5", "feeCcy": "USDT"}
-    assert Executor.protectable_size(order, "BTC") == pytest.approx(0.5)
+    assert Executor.protectable_size(order, "BTC") == Decimal("0.5")
 
 
 def test_a_rebate_never_inflates_the_protected_quantity():
     order = {"accFillSz": "1.0", "fee": "0.001", "feeCcy": "BTC"}
-    assert Executor.protectable_size(order, "BTC") == pytest.approx(1.0)
+    assert Executor.protectable_size(order, "BTC") == Decimal("1.0")
 
 
 def test_an_unfilled_order_has_nothing_to_protect():
-    assert Executor.protectable_size({"accFillSz": "0", "fee": "0"}, "BTC") == 0.0
-    assert Executor.protectable_size({}, "BTC") == 0.0
+    assert Executor.protectable_size({"accFillSz": "0", "fee": "0"}, "BTC") == 0
+    assert Executor.protectable_size({}, "BTC") == 0
 
 
 def test_a_fee_larger_than_the_fill_cannot_go_negative():
     order = {"accFillSz": "0.001", "fee": "-0.002", "feeCcy": "BTC"}
-    assert Executor.protectable_size(order, "BTC") == 0.0
+    assert Executor.protectable_size(order, "BTC") == 0
 
 
 def test_protection_never_exceeds_the_quantity_received(store):
@@ -288,6 +290,29 @@ def test_protection_never_exceeds_the_quantity_received(store):
     intent = executor.build_intent(p, approved(held), LIVE_BTC)
     executor.place_protection(intent, LIVE_BTC.size(held), dry_run=False)
 
-    sold = sum(float(o["sz"]) for o in rest.ocos) + sum(float(o["sz"]) for o in rest.stops)
-    assert sold <= held + 1e-12
-    assert sold == pytest.approx(held, abs=1e-8)
+    sold = sum(Decimal(o["sz"]) for o in rest.ocos) + sum(Decimal(o["sz"]) for o in rest.stops)
+    assert sold <= held, "never offer to sell more than the account received"
+    assert held - sold < LIVE_BTC.min_sz, "the shortfall must be unprotectable dust"
+
+
+def test_the_fee_subtraction_is_exact_rather_than_float_drift():
+    """Observed live: float arithmetic lost a satoshi to the lot-grid floor.
+
+    0.00012296 - 0.00000024 is 0.00012272 in decimal, but just under it in
+    binary, so flooring produced 0.00012271 and one unit went unprotected.
+    """
+    order = {"accFillSz": "0.00012296", "fee": "-0.00000024", "feeCcy": "BTC"}
+    assert Executor.protectable_size(order, "BTC") == Decimal("0.00012272")
+    assert LIVE_BTC.size(Executor.protectable_size(order, "BTC")) == "0.00012272"
+
+
+def test_an_exact_halving_produces_no_dust(store):
+    """0.00012272 splits evenly, so neither leg should need a dust merge."""
+    rest = FakeRest()
+    executor = Executor(rest, store)
+    held = Executor.protectable_size(
+        {"accFillSz": "0.00012296", "fee": "-0.00000024", "feeCcy": "BTC"}, "BTC"
+    )
+    intent = executor.build_intent(plan(), approved(held), LIVE_BTC)
+    assert [leg.size for leg in intent.legs] == ["0.00006136", "0.00006136"]
+    assert not any("dust" in note for note in intent.notes)

@@ -280,7 +280,7 @@ class Executor:
         return result
 
     @staticmethod
-    def protectable_size(order: dict, base_ccy: str) -> float:
+    def protectable_size(order: dict, base_ccy: str) -> Decimal:
         """How much of a filled entry can actually be sold.
 
         A SPOT buy is charged its fee in the BASE currency, so the quantity
@@ -291,16 +291,20 @@ class Executor:
 
         OKX reports the fee as a negative number in ``fee``, denominated in
         ``feeCcy``, so the arithmetic is an addition.
+
+        Decimal, not float: 0.00012296 - 0.00000024 is 0.00012272, but in
+        binary floating point it lands just under, and flooring to the lot
+        grid then silently discards a whole unit.
         """
-        filled = float(order.get("accFillSz") or 0)
+        filled = Decimal(str(order.get("accFillSz") or 0))
         if filled <= 0:
-            return 0.0
-        fee = float(order.get("fee") or 0)
+            return Decimal(0)
+        fee = Decimal(str(order.get("fee") or 0))
         # Only a base-denominated fee reduces what we hold. A sell's fee comes
         # out of the quote currency and leaves the base quantity untouched.
         if order.get("feeCcy") == base_ccy and fee < 0:
             filled += fee
-        return max(filled, 0.0)
+        return max(filled, Decimal(0))
 
     def place_protection(self, intent: ExecutionIntent, filled_size: str, dry_run: bool = True) -> list[dict]:
         """Attach exchange-side exits to a filled entry.
