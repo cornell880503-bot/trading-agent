@@ -144,18 +144,50 @@ second run re-reads state instead of re-submitting.
 
 ## 8. Firewall
 
-The bot makes only outbound connections. Nothing needs to reach it.
+The bot makes only outbound connections. Nothing needs to reach it except your
+own SSH session.
+
+Linode now requires every new instance to be attached to a Cloud Firewall
+before it can be created, so configure it at the create step:
+
+| Direction | Policy | Rules |
+|---|---|---|
+| Inbound | **Drop** | one rule: TCP 22 from `<your workstation's public IP>/32` |
+| Outbound | **Accept** | none needed |
+
+Do not open 80 or 443 inbound. Nothing here serves HTTP.
+
+To find the address for that rule, run this **on your own machine**, not on the
+VPS:
 
 ```bash
-sudo ufw default deny incoming
-sudo ufw default allow outgoing
-sudo ufw allow OpenSSH
-sudo ufw enable
+curl -4 -s https://checkip.amazonaws.com
 ```
 
-Also disable SSH password authentication (`PasswordAuthentication no` in
-`/etc/ssh/sshd_config`) and use keys. A box holding a trading key should not be
-brute-forceable.
+This is the same command as step 2, run somewhere else for a different purpose,
+and the two are easy to confuse:
+
+- run on the **VPS** -> the address to whitelist on the **OKX API key**
+- run on your **workstation** -> the address to allow through the **firewall**
+
+Restricting SSH to a single source cannot lock you out permanently: Linode's
+LISH console reaches the machine out of band, bypassing the Cloud Firewall
+entirely, so a changed home IP is an inconvenience rather than a disaster.
+
+A host firewall (`ufw`) on top of this is redundant -- the Cloud Firewall drops
+traffic before it reaches the machine -- and having two means checking two
+places the next time something cannot connect. Prefer the Cloud Firewall alone.
+
+Do still disable SSH password authentication, on the **VPS**:
+
+```bash
+sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+sudo systemctl restart ssh
+```
+
+(That is a GNU `sed` invocation and a systemd unit. Run it on the Ubuntu VPS;
+on a macOS workstation it fails, which is fortunate, because succeeding would
+mean editing your laptop's own SSH configuration.)
 
 ## 9. Going live
 
