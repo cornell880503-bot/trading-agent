@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "inst_id": "BTC-USDT",
+  "timeframe": "4H",
+  "side": "buy",
+  "entry": { "type": "limit", "price": 61500.0 },
+  "stop": { "price": 59800.0 },
+  "targets": [
+    { "price": 64500.0, "fraction": 0.5 },
+    { "price": 67000.0, "fraction": 0.3 }
+  ],
+  "size": { "mode": "risk_pct", "value": 1.0 },
+  "invalidation": "4H close below 59800, or ADX drops under 18 before target1",
+  "expires_at": "2099-01-01T00:00:00Z",
+  "confidence": 0.62,
+  "rationale": "Reclaimed the 50EMA on rising ADX; stop sits under the 12 Sep swing low. The remaining 20% rides on the stop with no take-profit."
+}

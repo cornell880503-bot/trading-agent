@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "okx-spot-advisor"
+version = "0.1.0"
+description = "Semi-automated OKX spot trading assistant with a hard risk gate"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.0.0",
+    "numpy>=1.24.0",
+    "requests>=2.31.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0"]
+
+[project.scripts]
+okxbot = "okxbot.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["okxbot*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

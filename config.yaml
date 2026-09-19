@@ -1,0 +1,44 @@
+# Risk limits are checked into the repo on purpose: a limit you cannot see in a
+# diff is not a limit. Secrets never live here -- they come from the environment.
+
+base_url: https://www.okx.com
+db_path: okxbot.sqlite3
+plans_dir: plans
+
+timeframes: ["1H", "4H", "1D"]
+candle_limit: 300
+
+risk:
+  # Only these instruments can ever be traded, whatever a plan says.
+  symbol_whitelist:
+    - BTC-USDT
+    - ETH-USDT
+  quote_ccy: USDT
+
+  # Absolute ceiling on one position's notional value.
+  max_notional_per_trade: 500.0
+
+  # ...and on its share of total equity, whichever binds first.
+  max_account_fraction_per_trade: 0.20
+
+  # The loss taken if the stop fills, as a percent of equity. This is the
+  # limit that actually governs risk; the two above only bound exposure.
+  max_risk_pct_per_trade: 1.0
+
+  # How many plans may be live at once.
+  max_open_plans: 2
+
+  # Kill switch. Once realised P&L over a rolling 24h drops below the negative
+  # of this, every submission is refused until the window rolls forward.
+  max_daily_loss_quote: 100.0
+
+  # Plans below this reward-to-risk ratio (measured to the first target) are
+  # refused outright rather than resized.
+  min_risk_reward: 1.5
+
+  # A plan older than this is stale: the market it described has moved on.
+  max_plan_age_seconds: 3600
+
+  # Market entries abort beyond this gap from the planned price; limit entries
+  # only warn.
+  max_slippage_pct: 0.5
