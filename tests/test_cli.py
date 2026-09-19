@@ -92,6 +92,28 @@ def test_scan_renders_every_requested_timeframe(wired, capsys):
     assert "RSI" in out and "ATR" in out
 
 
+def test_scan_names_the_bar_each_reading_came_from(wired, capsys):
+    """Without this, the output looks wrong next to an exchange chart.
+
+    The chart's rightmost candle is still forming; every number here is from
+    the last closed bar. Naming the bar is what makes the two comparable.
+    """
+    assert run(["scan", "BTC-USDT", "--timeframes", "4H"]) == 0
+    out = capsys.readouterr().out
+    assert "(closed)" in out
+    assert "bar 20" in out, "the bar open timestamp must be printed"
+
+
+def test_scan_states_the_conventions_a_chart_comparison_needs(wired, capsys):
+    assert run(["scan", "BTC-USDT", "--timeframes", "4H"]) == 0
+    out = capsys.readouterr().out
+    # OKX's RSI panel defaults to 6/12/24 and its MACD histogram is doubled;
+    # both differences look like bugs until the output says otherwise.
+    assert "6/12/24" in out
+    assert "DIF - DEA" in out
+    assert "RSI(14)" in out
+
+
 def test_scan_writes_a_json_snapshot_that_parses(wired, tmp_path, capsys):
     target = tmp_path / "snap.json"
     assert run(["scan", "BTC-USDT", "--timeframes", "4H", "--json", str(target)]) == 0

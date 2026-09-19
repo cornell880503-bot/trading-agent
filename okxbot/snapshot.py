@@ -153,7 +153,13 @@ def to_json(snapshot: dict) -> str:
 
 
 def render_text(snapshot: dict) -> str:
-    """Terminal view: the numbers a human scans before reading a plan."""
+    """Terminal view: the numbers a human scans before reading a plan.
+
+    Each row names the bar it came from. Without that, these values look like
+    they disagree with the exchange's chart, because the chart's rightmost
+    candle is still forming while every number here is from the last closed
+    one. Stating the bar open time turns a mystery into a lookup.
+    """
     lines = [
         f"{snapshot['inst_id']}  last {snapshot['last_price']}  "
         f"24h {snapshot['ticker_24h']['change_pct']}%   ({snapshot['generated_at']})",
@@ -164,10 +170,19 @@ def render_text(snapshot: dict) -> str:
             continue
         levels = view["levels"]
         lines += [
-            f"  [{timeframe}] close {view['close']}  {view['trend']}",
-            f"        RSI {view['rsi14']}   ADX {view['adx14']}   "
-            f"ATR {view['atr14']} ({view['atr_pct_of_price']}%)   "
+            f"  [{timeframe}] close {view['close']}   "
+            f"bar {view['last_bar_open']} (closed)   {view['trend']}",
+            f"        RSI(14) {view['rsi14']}   ADX(14) {view['adx14']}   "
+            f"ATR(14) {view['atr14']} ({view['atr_pct_of_price']}%)   "
             f"MACD hist {view['macd']['hist']} ({view['macd']['histogram_momentum']})",
             f"        resistance {levels['resistance'] or '-'}   support {levels['support'] or '-'}",
         ]
+    lines += [
+        "",
+        "  Comparing against an exchange chart? Match these first:",
+        "    - the bar named above, not the one still forming at the right edge",
+        "    - RSI/ADX/ATR period 14; OKX's default RSI panel plots 6/12/24",
+        "    - MACD hist here is DIF - DEA. OKX plots 2 x (DIF - DEA), so its",
+        "      histogram reads double this value",
+    ]
     return "\n".join(lines)
